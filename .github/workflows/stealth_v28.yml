@@ -1,4 +1,4 @@
-name: Autonomous S22 Solver V27
+name: Autonomous S22 Solver V28
 on:
   workflow_dispatch:
 jobs:
@@ -30,10 +30,10 @@ jobs:
           make -j$(nproc) ARCH=arm64 LLVM=1 CROSS_COMPILE=aarch64-linux-gnu- KCFLAGS="-w" Image
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ../AK3
           cp arch/arm64/boot/Image ../AK3/Image
-          cd ../AK3 && zip -r9 ../StealthStation-S22-V27.zip .
+          cd ../AK3 && zip -r9 ../StealthStation-S22-V28.zip .
       
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: StealthStation-Final
-          path: StealthStation-S22-V27.zip
+          path: StealthStation-S22-V28.zip
