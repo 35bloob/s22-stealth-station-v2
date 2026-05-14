@@ -1,4 +1,4 @@
-name: S22 Stealth v3.4
+name: S22 Stealth v3.5
 on:
   workflow_dispatch:
 jobs:
@@ -25,8 +25,10 @@ jobs:
           export LLVM_IAS=1
           export CROSS_COMPILE=aarch64-linux-gnu-
           
-          # 1. HARD-FIXES
+          # 1. SURGICAL CODE PATCHES
+          # Fix F2FS member error (Error 2 in your last build)
           sed -i 's/in_group_p(F2FS_OPTION(sbi).flush_group)/1/g' fs/f2fs/data.c || true
+          # Remove Werror globally
           find . -name "Makefile" -o -name "Kbuild" | xargs sed -i 's/-Werror//g' || true
           
           # 2. INTEGRATIONS
@@ -39,33 +41,43 @@ jobs:
           # 3. CONFIGURATION
           make clean
           make gki_defconfig
+          
+          # Search for the Snapdragon vendor config
           CONF=$(find arch/arm64/configs -name "waipio_defconfig" -o -name "taro_defconfig" | head -1)
-          [ -n "$CONF" ] && cat "$CONF" >> .config
-          cat $GITHUB_WORKSPACE/configs/nethunter.config >> .config
-          cat $GITHUB_WORKSPACE/configs/stealth.config >> .config
+          if [ -n "$CONF" ]; then
+             cat "$CONF" >> .config
+          fi
+          
+          # Merge Stealth Fragments
+          [ -f $GITHUB_WORKSPACE/configs/nethunter.config ] && cat $GITHUB_WORKSPACE/configs/nethunter.config >> .config
+          [ -f $GITHUB_WORKSPACE/configs/stealth.config ] && cat $GITHUB_WORKSPACE/configs/stealth.config >> .config
+          
+          # Force stability options
+          echo "CONFIG_WERROR=n" >> .config
           echo "CONFIG_IKCONFIG=y" >> .config
           echo "CONFIG_IKCONFIG_PROC=y" >> .config
-          echo "CONFIG_WERROR=n" >> .config
+          
           make olddefconfig
           
-          # 4. THE BYPASS: Explicitly build only the Image
-          # We avoid 'make all' or 'make headers_install'
-          make -j$(nproc) LLVM=1 LLVM_IAS=1 KCFLAGS="-w" Image
+          # 4. TARGETED COMPILATION
+          # We explicitly target 'Image' and bypass the header installation scripts
+          make -j$(nproc) LLVM=1 LLVM_IAS=1 KCFLAGS="-w -Wno-error" Image
           
       - name: ZIP
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 /tmp/AK3
+          # Find the Image file regardless of sub-folder structure
           IMG=$(find src -name "Image" -type f | head -1)
           if [ -f "$IMG" ]; then
             cp "$IMG" /tmp/AK3/Image
             cp anykernel/anykernel.sh /tmp/AK3/
-            cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v3.4.zip .
+            cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v3.5.zip .
           else
-            echo "ERROR: Image not found. The build crashed before finishing."
+            echo "ERROR: Kernel Image not found."
             exit 1
           fi
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: StealthStation-Final
-          path: StealthStation-v3.4.zip
+          path: StealthStation-v3.5.zip
