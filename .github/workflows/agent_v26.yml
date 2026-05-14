@@ -1,0 +1,59 @@
+name: Autonomous S22 Solver V26
+on:
+  workflow_dispatch:
+jobs:
+  agent_build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Environment (Phase 0)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
+      
+      - name: Fetch & Inject (Phase 1 & 2)
+        run: |
+          git clone --depth 1 https://github.com/yoro1836/zero_kernel.git src
+          cd src
+          # Injecting the requested Wireless Drivers
+          git clone --depth 1 https://github.com/kimocoder/rtl8188fu.git drivers/net/wireless/rtl8188fu
+          git clone --depth 1 https://github.com/aircrack-ng/rtl8812au.git drivers/net/wireless/rtl8812au
+          # Applying KernelSU
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+
+      - name: Configure Max Pentesting (Phase 3 & 4)
+        run: |
+          cd src
+          export ARCH=arm64
+          make gki_defconfig
+          chmod +x scripts/config
+          
+          # Networking & Stealth
+          ./scripts/config --enable CONFIG_WIREGUARD --enable CONFIG_IP_NF_TARGET_REDIRECT --enable CONFIG_NETFILTER_XT_MATCH_COMMENT
+          # USB HID & Gadgets
+          ./scripts/config --enable CONFIG_USB_G_HID --enable CONFIG_USB_CONFIGFS_F_HID --enable CONFIG_USB_F_HID --enable CONFIG_USB_CONFIGFS_F_RNDIS
+          # Wi-Fi Monitor & Injection
+          ./scripts/config --enable CONFIG_QCACLD_WLAN_MONITOR --enable CONFIG_CFG80211_CERTIFICATION_ONUS
+          # Automotive CAN Bus
+          ./scripts/config --enable CONFIG_CAN --enable CONFIG_CAN_VCAN --enable CONFIG_CAN_SLCAN --enable CONFIG_CAN_RAW
+          # NFC & Bluetooth Arsenal
+          ./scripts/config --enable CONFIG_NFC_NCI --enable CONFIG_BT_HCIBTUSB --enable CONFIG_BT_HCIUART
+          # Security & Container Support
+          ./scripts/config --disable CONFIG_MODULE_SIG --enable CONFIG_NAMESPACES --enable CONFIG_CGROUPS
+          
+          # Apply Viktor's LTO fix
+          find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
+          make olddefconfig
+
+      - name: Build & Package (Phase 5 & 6)
+        run: |
+          cd src
+          make -j$(nproc) ARCH=arm64 LLVM=1 CROSS_COMPILE=aarch64-linux-gnu- KCFLAGS="-w" Image
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ../AK3
+          cp arch/arm64/boot/Image ../AK3/Image
+          cd ../AK3 && zip -r9 ../StealthStation-S22-V26.zip .
+      
+      - name: Upload Stealth Station
+        uses: actions/upload-artifact@v4
+        with:
+          name: StealthStation-Final
+          path: StealthStation-S22-V26.zip
