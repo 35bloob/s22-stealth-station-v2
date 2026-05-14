@@ -5,6 +5,6 @@ device.name1=r0q
 device.name2=g0q
 device.name3=b0q
 device.name4=sm8450
-ui_print "StealthStation v5.0 - THE FINAL BUILD";
+ui_print "StealthStation v6.0 - ISOLATED BUILD";
 dump_boot;
 write_boot;
