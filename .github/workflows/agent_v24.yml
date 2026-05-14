@@ -1,14 +1,24 @@
-name: Autonomous S22 Solver V23
+name: Autonomous S22 Solver V24
 on:
   workflow_dispatch:
 jobs:
   agent_build:
     runs-on: ubuntu-latest
     steps:
-      - name: Setup
-        run: sudo apt-get update && sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
-      - name: Build
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          clean: true
+          submodules: false
+      - name: Setup Tools
         run: |
+          sudo apt-get update
+          sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
+      - name: Build Kernel
+        run: |
+          # Use a directory outside of the git-managed workspace to avoid conflicts
+          mkdir -p ../kernel_build
+          cd ../kernel_build
           git clone --depth 1 https://github.com/Vikinsson207/android_kernel_samsung_sm8450.git src
           cd src
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
@@ -22,14 +32,15 @@ jobs:
           ./scripts/config --enable CONFIG_USB_F_HID --enable CONFIG_USB_CONFIGFS_F_HID --enable CONFIG_QCACLD_WLAN_MONITOR --disable CONFIG_MODULE_SIG
           make olddefconfig
           make -j$(nproc) LLVM=1 KCFLAGS="-w" Image
-          cp arch/arm64/boot/Image ../Image
+          cp arch/arm64/boot/Image $GITHUB_WORKSPACE/Image
       - name: Package
         run: |
+          cd $GITHUB_WORKSPACE
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AK3
           cp Image AK3/Image
-          cd AK3 && zip -r9 ../StealthStation-V23.zip .
+          cd AK3 && zip -r9 ../StealthStation-V24.zip .
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: StealthStation-Final
-          path: StealthStation-V23.zip
+          path: StealthStation-V24.zip
