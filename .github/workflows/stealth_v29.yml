@@ -1,0 +1,31 @@
+name: stealth_v29
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        run: |
+          git clone --depth 1 https://github.com/yoro1836/zero_kernel.git src
+          cd src
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+      - name: Build
+        run: |
+          cd src
+          export ARCH=arm64
+          make gki_defconfig
+          sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' arch/arm64/configs/gki_defconfig
+          ./scripts/config --enable CONFIG_QCACLD_WLAN_MONITOR --enable CONFIG_USB_G_HID --enable CONFIG_CAN --enable CONFIG_WIREGUARD
+          make olddefconfig
+          make -j$(nproc) ARCH=arm64 LLVM=1 CROSS_COMPILE=aarch64-linux-gnu- Image
+      - name: Package
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AK3
+          cp src/arch/arm64/boot/Image AK3/Image
+          cd AK3 && zip -r9 ../Stealth-S22-V29.zip .
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stealth-V29
+          path: Stealth-S22-V29.zip
