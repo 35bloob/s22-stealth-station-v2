@@ -13,17 +13,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang
 
-      - name: Download Snapdragon Clang Toolchain
+      - name: Download Toolchain
         run: |
           mkdir -p $GITHUB_WORKSPACE/clang
-          # Using a stable prebuilt Clang 17 for Snapdragon
           wget https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.6/clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04.tar.xz
           tar -xJf clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04.tar.xz -C $GITHUB_WORKSPACE/clang --strip-components=1
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
 
       - name: Clone S22 Snapdragon Source
         run: |
-          git clone --depth 1 https://github.com/afaneh92/android_kernel_samsung_sm8450.git src
+          # Using verified S22 Snapdragon Source
+          git clone --depth 1 https://github.com/yoro1836/android_kernel_samsung_sm8450_s22.git src
           echo "KERNEL_DIR=$PWD/src" >> $GITHUB_ENV
 
       - name: Patch & Build
@@ -34,15 +34,18 @@ jobs:
           export LLVM_IAS=1
           export CROSS_COMPILE=aarch64-linux-gnu-
           
-          # Integrate KernelSU
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          # Integrate KernelSU (Check if already present)
+          if [ ! -d "KernelSU" ]; then
+            curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          fi
           
           # Inject RTL8188FU
           git clone --depth=1 https://github.com/kelebek333/rtl8188fu drivers/net/wireless/rtl8188fu
           echo "obj-y += rtl8188fu/" >> drivers/net/wireless/Makefile
           
-          # Configure for Snapdragon (taro)
-          make O=out ARCH=arm64 LLVM=1 taro_defconfig
+          # Find and use the Snapdragon Taro defconfig
+          DEFCONFIG=$(find arch/arm64/configs -name "*taro*" | head -1 | xargs basename)
+          make O=out ARCH=arm64 LLVM=1 $DEFCONFIG
           
           # Merge Stealth Fragments
           cat $GITHUB_WORKSPACE/configs/nethunter.config >> out/.config

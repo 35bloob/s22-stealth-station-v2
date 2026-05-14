@@ -1,9 +1,10 @@
 do.devicecheck=1
 do.modules=0
 do.systemless=1
-device.name1=s5e9925
-device.name2=dm1s
-device.name3=dm1
-ui_print "StealthStation v2.0 - Mirror Build";
+device.name1=r0q
+device.name2=g0q
+device.name3=b0q
+device.name4=sm8450
+ui_print "StealthStation v2.0 - Snapdragon S22 Build";
 dump_boot;
 write_boot;
