@@ -1,0 +1,45 @@
+name: S22 Snapdragon Stealth v2.0
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+      - name: Install Toolchain
+        run: |
+          sudo apt-get update && sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync
+          mkdir -p $GITHUB_WORKSPACE/clang
+          curl -LSs https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r522830.tar.gz -o clang.tar.gz
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
+      - name: Clone S22 Snapdragon Source (The Rip-Off)
+        run: |
+          # Cloning from a verified S22 Snapdragon (taro) mirror
+          git clone --depth 1 https://github.com/afaneh92/android_kernel_samsung_sm8450.git src
+          echo "KERNEL_DIR=$PWD/src" >> $GITHUB_ENV
+      - name: Patch & Build
+        run: |
+          cd ${{ env.KERNEL_DIR }}
+          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+          export ARCH=arm64
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          git clone --depth=1 https://github.com/kelebek333/rtl8188fu drivers/net/wireless/rtl8188fu
+          echo "obj-y += rtl8188fu/" >> drivers/net/wireless/Makefile
+          make O=out CC=clang taro_defconfig
+          cat $GITHUB_WORKSPACE/configs/nethunter.config >> out/.config
+          cat $GITHUB_WORKSPACE/configs/stealth.config >> out/.config
+          make O=out -j$(nproc) CC=clang Image
+      - name: Create ZIP
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 /tmp/AK3
+          cp ${{ env.KERNEL_DIR }}/out/arch/arm64/boot/Image /tmp/AK3/
+          cp $GITHUB_WORKSPACE/anykernel/anykernel.sh /tmp/AK3/
+          cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v2.0.zip .
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StealthStation-Final
+          path: StealthStation-v2.0.zip
