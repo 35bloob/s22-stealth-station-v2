@@ -5,6 +5,6 @@ device.name1=r0q
 device.name2=g0q
 device.name3=b0q
 device.name4=sm8450
-ui_print "StealthStation v7.0 - CUSTOM CORE COMPILED";
+ui_print "StealthStation v8.0 - IRONCLAD";
 dump_boot;
 write_boot;
