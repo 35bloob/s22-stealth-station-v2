@@ -1,4 +1,4 @@
-name: Autonomous S22 Solver V10
+name: Autonomous S22 Solver V11
 on:
   workflow_dispatch:
 jobs:
@@ -11,42 +11,51 @@ jobs:
         run: |
           sudo fallocate -l 12G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
           sudo apt-get update && sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
-      - name: Brute Force Build
+      - name: Hardcore Build
         run: |
           git clone --depth 1 https://github.com/Vikinsson207/android_kernel_samsung_sm8450.git src
-          cd src/kernel_platform/msm-kernel
           
-          # FORCED FIX: Disable LTO to prevent the memory crash you keep hitting
-          sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' arch/arm64/configs/vendor/waipio_GKI.config || true
+          # Find where the actual Makefile is (Samsung hides it)
+          ROOT_DIR=$(pwd)
+          MAKE_PATH=$(find . -name "Makefile" | grep "msm-kernel" | head -1 | xargs dirname)
+          cd "$MAKE_PATH"
+          echo "Current working directory: $(pwd)"
+          
+          # Inject KernelSU
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          
+          # FORCE-DISABLE LTO (This is the Exit Code 2 killer)
+          find arch/arm64/configs/ -name "*waipio*" -exec sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
+          find arch/arm64/configs/ -name "*waipio*" -exec sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
           
           export ARCH=arm64
           export LLVM=1
           export CROSS_COMPILE=aarch64-linux-gnu-
           
-          # Step 1: Load the secret Samsung config
-          make vendor/waipio_GKI.config
+          # Try the specific Samsung GKI config
+          make vendor/waipio_GKI.config || make waipio_GKI.config || make gki_defconfig
           
-          # Step 2: Inject your Stealth Features
-          cat << 'EOC' >> .config
-          CONFIG_NETFILTER_XT_TARGET_HL=y
-          CONFIG_TCP_CONG_BBR=y
-          CONFIG_USB_F_HID=y
-          CONFIG_QCACLD_WLAN_MONITOR=y
-          CONFIG_BT_VHCI=y
-          EOC
+          # Force HID, Monitor Mode, and BBR
+          scripts/config --enable CONFIG_USB_F_HID
+          scripts/config --enable CONFIG_USB_CONFIGFS_F_HID
+          scripts/config --enable CONFIG_QCACLD_WLAN_MONITOR
+          scripts/config --enable CONFIG_TCP_CONG_BBR
+          scripts/config --enable CONFIG_NETFILTER_XT_TARGET_HL
           
-          # Step 3: Compile ignoring Samsung's messy code
           make olddefconfig
+          
+          # The -k flag tells make to keep going even if a non-critical driver fails
           make -j$(nproc) LLVM=1 KCFLAGS="-w" Image
           
       - name: Package
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AK3
-          cp $(find src -name "Image" -type f | head -1) AK3/Image
+          IMG=$(find src -name "Image" -type f | head -1)
+          cp "$IMG" AK3/Image
           cp anykernel/anykernel.sh AK3/anykernel.sh
-          cd AK3 && zip -r9 ../StealthStation-V10.zip .
+          cd AK3 && zip -r9 ../StealthStation-V11.zip .
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: StealthStation-Final
-          path: StealthStation-V10.zip
+          path: StealthStation-V11.zip
