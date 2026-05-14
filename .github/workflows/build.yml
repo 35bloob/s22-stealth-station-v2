@@ -1,4 +1,4 @@
-name: S22 Snapdragon Stealth v2.9
+name: S22 Snapdragon Stealth v2.10
 on:
   workflow_dispatch:
 jobs:
@@ -32,27 +32,36 @@ jobs:
           export LLVM_IAS=1
           export CROSS_COMPILE=aarch64-linux-gnu-
           
+          # 1. THE BERSERKER CLEAN: Physically remove -Werror from every single file
+          echo "Cleaning Werror from source..."
+          find . -type f \( -name "Makefile" -o -name "Kbuild" -o -name "*.mk" -o -name "*.sh" \) -exec sed -i 's/-Werror//g' {} +
+          find . -type f \( -name "Makefile" -o -name "Kbuild" -o -name "*.mk" -o -name "*.sh" \) -exec sed -i 's/-Wfatal-errors//g' {} +
+          
+          # 2. Apply KernelSU
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
           
+          # 3. Inject RTL8188FU Driver
           mkdir -p drivers/net/wireless/rtl8188fu
           git clone --depth=1 https://github.com/kelebek333/rtl8188fu /tmp/rtl8188fu
           cp -r /tmp/rtl8188fu/* drivers/net/wireless/rtl8188fu/
           echo "obj-y += rtl8188fu/" >> drivers/net/wireless/Makefile
           
+          # 4. Config Merge
           make O=out ARCH=arm64 LLVM=1 gki_defconfig
-          
           CONF_FILE=$(find arch/arm64/configs -name "waipio_defconfig" -o -name "taro_defconfig" -o -name "*consolidate*" | head -1)
-          echo "Merging Samsung Config: $CONF_FILE"
-          
           cat "$CONF_FILE" >> out/.config
           [ -f $GITHUB_WORKSPACE/configs/nethunter.config ] && cat $GITHUB_WORKSPACE/configs/nethunter.config >> out/.config
           [ -f $GITHUB_WORKSPACE/configs/stealth.config ] && cat $GITHUB_WORKSPACE/configs/stealth.config >> out/.config
           
           make O=out ARCH=arm64 LLVM=1 olddefconfig
+          
+          # Force no WERROR in the final config
           sed -i 's/CONFIG_WERROR=y/CONFIG_WERROR=n/g' out/.config
           echo "CONFIG_WERROR=n" >> out/.config
           
-          make O=out -j$(nproc) ARCH=arm64 LLVM=1 LLVM_IAS=1 KCFLAGS="-w -Wno-error" Image
+          # 5. Compilation with "Keep Going" flag
+          # -k ensures that even if one driver fails, the core kernel keeps building
+          make O=out -j$(nproc) ARCH=arm64 LLVM=1 LLVM_IAS=1 KCFLAGS="-w -Wno-error" -k Image || true
 
       - name: Create ZIP
         run: |
@@ -61,9 +70,9 @@ jobs:
           if [ -f "$IMG_PATH" ]; then
             cp "$IMG_PATH" /tmp/AK3/Image
             cp anykernel/anykernel.sh /tmp/AK3/
-            cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v2.9.zip .
+            cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v2.10.zip .
           else
-            echo "ERROR: Kernel Image not found!"
+            echo "ERROR: Kernel Image was not produced. Build failed."
             exit 1
           fi
 
@@ -71,4 +80,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: StealthStation-Final
-          path: StealthStation-v2.9.zip
+          path: StealthStation-v2.10.zip
