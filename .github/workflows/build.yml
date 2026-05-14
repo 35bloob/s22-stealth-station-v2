@@ -1,4 +1,4 @@
-name: S22 Snapdragon Stealth v2.1
+name: S22 Snapdragon Stealth v2.2
 on:
   workflow_dispatch:
 jobs:
@@ -26,31 +26,36 @@ jobs:
 
       - name: Patch & Build
         run: |
-          # 1. Find the actual kernel root (where the 'drivers' folder lives)
           cd src
-          KROOT=$(find . -type d -name "drivers" -maxdepth 3 | head -1 | sed 's|/drivers$||')
+          # Find the actual kernel root
+          KROOT=$(find . -type d -name "drivers" -maxdepth 4 | head -1 | sed 's|/drivers$||')
           cd "$KROOT"
           echo "KERNEL_DIR_ACTUAL=$PWD" >> $GITHUB_ENV
-          echo "Working in: $PWD"
 
-          # 2. Setup Environment
+          # Setup Environment
           export ARCH=arm64
           export LLVM=1
           export LLVM_IAS=1
           export CROSS_COMPILE=aarch64-linux-gnu-
           
-          # 3. Apply KernelSU
+          # Apply KernelSU
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
           
-          # 4. Inject RTL8188FU Driver
+          # Inject RTL8188FU Driver
           mkdir -p drivers/net/wireless/rtl8188fu
           git clone --depth=1 https://github.com/kelebek333/rtl8188fu /tmp/rtl8188fu
           cp -r /tmp/rtl8188fu/* drivers/net/wireless/rtl8188fu/
           echo "obj-y += rtl8188fu/" >> drivers/net/wireless/Makefile
           
-          # 5. Configuration (Find the best taro/sm8450 config)
-          DEFCONFIG=$(find arch/arm64/configs -name "*taro*" | head -1 | xargs basename)
-          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm64/configs/vendor -name "*taro*" | head -1 | xargs basename)
+          # SMART CONFIG SEARCH
+          # Look for taro, then sm8450, then waipio, then gki
+          CONF=$(find arch/arm64/configs -name "*taro*" -o -name "*sm8450*" -o -name "*waipio*" | head -1)
+          if [ -z "$CONF" ]; then
+            CONF=$(find arch/arm64/configs -name "gki_defconfig" | head -1)
+          fi
+          
+          DEFCONFIG=$(basename $CONF)
+          echo "Using Config: $DEFCONFIG"
           
           make O=out ARCH=arm64 LLVM=1 $DEFCONFIG
           
@@ -58,20 +63,20 @@ jobs:
           cat $GITHUB_WORKSPACE/configs/nethunter.config >> out/.config
           cat $GITHUB_WORKSPACE/configs/stealth.config >> out/.config
           
-          # 6. Compilation
+          # Compilation
           make O=out -j$(nproc) ARCH=arm64 LLVM=1 LLVM_IAS=1 Image
 
       - name: Create ZIP
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 /tmp/AK3
-          # Find the built Image
-          IMG_PATH=$(find src -name "Image" | grep "out" | head -1)
+          # Find the built Image anywhere in the 'out' folder
+          IMG_PATH=$(find . -name "Image" | grep "out" | head -1)
           cp "$IMG_PATH" /tmp/AK3/Image
           cp anykernel/anykernel.sh /tmp/AK3/
-          cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v2.1.zip .
+          cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v2.2.zip .
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: StealthStation-Final
-          path: StealthStation-v2.1.zip
+          path: StealthStation-v2.2.zip
