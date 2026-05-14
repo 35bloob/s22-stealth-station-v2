@@ -1,4 +1,4 @@
-name: S22 Snapdragon Stealth v2.8
+name: S22 Snapdragon Stealth v2.9
 on:
   workflow_dispatch:
 jobs:
@@ -26,44 +26,32 @@ jobs:
 
       - name: Patch & Build
         run: |
-          # 1. GO DIRECTLY TO THE KNOWN KERNEL ROOT
           cd src/kernel_platform/msm-kernel
-          echo "ACTUAL_KERNEL_DIR=$PWD" >> $GITHUB_ENV
-          
-          # 2. Setup Build Environment
           export ARCH=arm64
           export LLVM=1
           export LLVM_IAS=1
           export CROSS_COMPILE=aarch64-linux-gnu-
           
-          # 3. Apply KernelSU
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
           
-          # 4. Inject RTL8188FU Driver
           mkdir -p drivers/net/wireless/rtl8188fu
           git clone --depth=1 https://github.com/kelebek333/rtl8188fu /tmp/rtl8188fu
           cp -r /tmp/rtl8188fu/* drivers/net/wireless/rtl8188fu/
           echo "obj-y += rtl8188fu/" >> drivers/net/wireless/Makefile
           
-          # 5. Mass Warning Eraser (Bypass Werror)
-          find . -name "Makefile" -o -name "Kbuild" | xargs sed -i 's/-Werror//g' || true
-
-          # 6. Build Config
-          # Search for the best config in the vendor folder
-          CONF_FILE=$(find arch/arm64/configs -name "*taro*" -o -name "*waipio*" -o -name "*sm8450*" | head -1)
-          if [ -z "$CONF_FILE" ]; then
-            CONF_FILE=$(find arch/arm64/configs -name "gki_defconfig" | head -1)
-          fi
-          echo "Using Config: $CONF_FILE"
+          make O=out ARCH=arm64 LLVM=1 gki_defconfig
           
-          make O=out ARCH=arm64 LLVM=1 $(basename $CONF_FILE)
+          CONF_FILE=$(find arch/arm64/configs -name "waipio_defconfig" -o -name "taro_defconfig" -o -name "*consolidate*" | head -1)
+          echo "Merging Samsung Config: $CONF_FILE"
           
-          # Merge Stealth Fragments
+          cat "$CONF_FILE" >> out/.config
           [ -f $GITHUB_WORKSPACE/configs/nethunter.config ] && cat $GITHUB_WORKSPACE/configs/nethunter.config >> out/.config
           [ -f $GITHUB_WORKSPACE/configs/stealth.config ] && cat $GITHUB_WORKSPACE/configs/stealth.config >> out/.config
+          
+          make O=out ARCH=arm64 LLVM=1 olddefconfig
+          sed -i 's/CONFIG_WERROR=y/CONFIG_WERROR=n/g' out/.config
           echo "CONFIG_WERROR=n" >> out/.config
           
-          # 7. Compilation
           make O=out -j$(nproc) ARCH=arm64 LLVM=1 LLVM_IAS=1 KCFLAGS="-w -Wno-error" Image
 
       - name: Create ZIP
@@ -73,7 +61,7 @@ jobs:
           if [ -f "$IMG_PATH" ]; then
             cp "$IMG_PATH" /tmp/AK3/Image
             cp anykernel/anykernel.sh /tmp/AK3/
-            cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v2.8.zip .
+            cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v2.9.zip .
           else
             echo "ERROR: Kernel Image not found!"
             exit 1
@@ -83,4 +71,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: StealthStation-Final
-          path: StealthStation-v2.8.zip
+          path: StealthStation-v2.9.zip
