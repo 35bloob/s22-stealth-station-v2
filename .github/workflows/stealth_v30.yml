@@ -1,0 +1,46 @@
+name: stealth_v30
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc build-essential flex bison libssl-dev libelf-dev clang lld llvm
+
+      - name: Checkout Source
+        run: |
+          git clone --depth 1 https://github.com/yoro1836/zero_kernel.git src
+          cd src
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+
+      - name: Build Kernel
+        run: |
+          cd src
+          export ARCH=arm64
+          # Link LLVM tools so the Makefile finds them without version suffixes
+          export PATH="/usr/lib/llvm-18/bin:$PATH"
+          
+          make gki_defconfig
+          
+          # Viktor's LTO Fix
+          sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' arch/arm64/configs/gki_defconfig
+          
+          ./scripts/config --enable CONFIG_QCACLD_WLAN_MONITOR --enable CONFIG_USB_G_HID --enable CONFIG_CAN --enable CONFIG_WIREGUARD
+          
+          make olddefconfig
+          make -j$(nproc) ARCH=arm64 LLVM=1 CROSS_COMPILE=aarch64-linux-gnu- Image
+
+      - name: Package AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AK3
+          cp src/arch/arm64/boot/Image AK3/Image
+          cd AK3 && zip -r9 ../Stealth-S22-V30.zip .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stealth-V30
+          path: Stealth-S22-V30.zip
