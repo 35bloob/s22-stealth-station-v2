@@ -1,4 +1,4 @@
-name: S22 Snapdragon Stealth v2.7
+name: S22 Snapdragon Stealth v2.8
 on:
   workflow_dispatch:
 jobs:
@@ -26,16 +26,14 @@ jobs:
 
       - name: Patch & Build
         run: |
-          # 1. DYNAMICALLY FIND KERNEL ROOT
-          # We look for the folder that contains 'arch' and 'drivers'
-          KROOT=$(find src -name "arch" -type d -maxdepth 4 | head -1 | sed 's|/arch$||')
-          cd "$KROOT"
+          # 1. GO DIRECTLY TO THE KNOWN KERNEL ROOT
+          cd src/kernel_platform/msm-kernel
           echo "ACTUAL_KERNEL_DIR=$PWD" >> $GITHUB_ENV
-          echo "Discovered Kernel Root at: $PWD"
-
-          # 2. Setup Environment
+          
+          # 2. Setup Build Environment
           export ARCH=arm64
           export LLVM=1
+          export LLVM_IAS=1
           export CROSS_COMPILE=aarch64-linux-gnu-
           
           # 3. Apply KernelSU
@@ -45,38 +43,44 @@ jobs:
           mkdir -p drivers/net/wireless/rtl8188fu
           git clone --depth=1 https://github.com/kelebek333/rtl8188fu /tmp/rtl8188fu
           cp -r /tmp/rtl8188fu/* drivers/net/wireless/rtl8188fu/
-          echo "obj-m += rtl8188fu/" >> drivers/net/wireless/Makefile
+          echo "obj-y += rtl8188fu/" >> drivers/net/wireless/Makefile
           
-          # 5. DYNAMICALLY FIND DEFCONFIG
-          # We search for any taro, waipio, or sm8450 config in the tree
+          # 5. Mass Warning Eraser (Bypass Werror)
+          find . -name "Makefile" -o -name "Kbuild" | xargs sed -i 's/-Werror//g' || true
+
+          # 6. Build Config
+          # Search for the best config in the vendor folder
           CONF_FILE=$(find arch/arm64/configs -name "*taro*" -o -name "*waipio*" -o -name "*sm8450*" | head -1)
           if [ -z "$CONF_FILE" ]; then
             CONF_FILE=$(find arch/arm64/configs -name "gki_defconfig" | head -1)
           fi
-          echo "Discovered Config at: $CONF_FILE"
+          echo "Using Config: $CONF_FILE"
           
-          # Use that config
           make O=out ARCH=arm64 LLVM=1 $(basename $CONF_FILE)
           
-          # 6. Merge Fragments
+          # Merge Stealth Fragments
           [ -f $GITHUB_WORKSPACE/configs/nethunter.config ] && cat $GITHUB_WORKSPACE/configs/nethunter.config >> out/.config
           [ -f $GITHUB_WORKSPACE/configs/stealth.config ] && cat $GITHUB_WORKSPACE/configs/stealth.config >> out/.config
           echo "CONFIG_WERROR=n" >> out/.config
           
           # 7. Compilation
-          make O=out -j$(nproc) ARCH=arm64 LLVM=1 KCFLAGS="-w -Wno-error" Image
+          make O=out -j$(nproc) ARCH=arm64 LLVM=1 LLVM_IAS=1 KCFLAGS="-w -Wno-error" Image
 
       - name: Create ZIP
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 /tmp/AK3
-          # Find the built Image
-          IMG_PATH=$(find . -name "Image" | grep "out" | head -1)
-          cp "$IMG_PATH" /tmp/AK3/Image
-          cp anykernel/anykernel.sh /tmp/AK3/
-          cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v2.7.zip .
+          IMG_PATH=$(find src/kernel_platform/msm-kernel/out -name "Image" | head -1)
+          if [ -f "$IMG_PATH" ]; then
+            cp "$IMG_PATH" /tmp/AK3/Image
+            cp anykernel/anykernel.sh /tmp/AK3/
+            cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v2.8.zip .
+          else
+            echo "ERROR: Kernel Image not found!"
+            exit 1
+          fi
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: StealthStation-Final
-          path: StealthStation-v2.7.zip
+          path: StealthStation-v2.8.zip
