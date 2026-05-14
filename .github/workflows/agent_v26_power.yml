@@ -13,13 +13,17 @@ jobs:
 
       - name: Phase 1 & 2 - Fetch & Inject Drivers
         run: |
+          rm -rf src # Clean start to avoid 128 errors
           git clone --depth 1 https://github.com/yoro1836/zero_kernel.git src
           cd src
-          # External Wi-Fi Drivers
-          git clone --depth 1 https://github.com/kimocoder/rtl8188fu.git drivers/net/wireless/rtl8188fu
-          git clone --depth 1 https://github.com/aircrack-ng/rtl8812au.git drivers/net/wireless/rtl8812au
-          git clone --depth 1 https://github.com/morrownr/8814au.git drivers/net/wireless/8814au
-          git clone --depth 1 https://github.com/cilynx/rtl88x2bu.git drivers/net/wireless/rtl88x2bu
+          
+          # Create driver directories and clone
+          mkdir -p drivers/net/wireless/realtek
+          git clone --depth 1 https://github.com/kimocoder/rtl8188fu.git drivers/net/wireless/realtek/rtl8188fu
+          git clone --depth 1 https://github.com/aircrack-ng/rtl8812au.git drivers/net/wireless/realtek/rtl8812au
+          git clone --depth 1 https://github.com/morrownr/8814au.git drivers/net/wireless/realtek/8814au
+          git clone --depth 1 https://github.com/cilynx/rtl88x2bu.git drivers/net/wireless/realtek/rtl88x2bu
+          
           # Rooting
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
@@ -33,18 +37,17 @@ jobs:
           make gki_defconfig
           chmod +x scripts/config
 
-          # POWER FEATURES: USB & HID
+          # WIRELESS AUDITING POWER
+          ./scripts/config --enable CONFIG_QCACLD_WLAN_MONITOR
+          ./scripts/config --enable CONFIG_NET_CLS_BPF --enable CONFIG_BPF_SYSCALL
+          
+          # USB GADGET & BT POWER
           ./scripts/config --enable CONFIG_USB_F_HID --enable CONFIG_USB_CONFIGFS_F_HID
-          ./scripts/config --enable CONFIG_USB_F_MASS_STORAGE --enable CONFIG_USB_G_MULTI
+          ./scripts/config --enable CONFIG_USB_F_MASS_STORAGE
+          ./scripts/config --enable CONFIG_BT_HCIVHCI --enable CONFIG_BT_HCIUART_H4
           
-          # POWER FEATURES: Networking & Bluetooth
+          # NETWORKING SPEED (BBR)
           ./scripts/config --enable CONFIG_TCP_CONG_BBR --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --enable CONFIG_BT_HCIVHCI --enable CONFIG_BT_HCIUART --enable CONFIG_BT_HCIUART_H4
-          ./scripts/config --enable CONFIG_QCACLD_WLAN_MONITOR --enable CONFIG_WIREGUARD
-          
-          # POWER FEATURES: Pentesting Protocols
-          ./scripts/config --enable CONFIG_CAN --enable CONFIG_CAN_VCAN --enable CONFIG_CAN_SLCAN
-          ./scripts/config --enable CONFIG_BPF_SYSCALL --enable CONFIG_NET_CLS_BPF
           
           make olddefconfig
 
