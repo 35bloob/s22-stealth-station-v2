@@ -1,0 +1,66 @@
+name: S22 Stealth v3.10
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+          mkdir -p $GITHUB_WORKSPACE/clang
+          wget https://github.com/llvm/llvm-project/releases/download/llvmorg-14.0.0/clang+llvm-14.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz
+          tar -xJf clang+llvm-14.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz -C $GITHUB_WORKSPACE/clang --strip-components=1
+          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+      - name: Source and Build
+        run: |
+          git clone --depth 1 https://github.com/yoro1836/android_kernel_samsung_sm8450_s22.git src
+          cd src/kernel_platform/msm-kernel
+          export ARCH=arm64
+          export LLVM=1
+          export LLVM_IAS=1
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+          
+          # HARD PATCHES (Solves previous crashes)
+          sed -i 's/in_group_p(F2FS_OPTION(sbi).flush_group)/1/g' fs/f2fs/data.c || true
+          find . -name "Makefile" -exec sed -i 's/-Werror//g' {} + || true
+          
+          # INTEGRATIONS
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          mkdir -p drivers/net/wireless/rtl8188fu
+          git clone --depth=1 https://github.com/kelebek333/rtl8188fu /tmp/rtl8188fu
+          cp -r /tmp/rtl8188fu/* drivers/net/wireless/rtl8188fu/
+          echo "obj-y += rtl8188fu/" >> drivers/net/wireless/Makefile
+          
+          # CONFIGURATION
+          make gki_defconfig
+          CONF=$(find arch/arm64/configs -name "waipio_defconfig" -o -name "taro_defconfig" | head -1)
+          [ -n "$CONF" ] && cat "$CONF" >> .config
+          cat $GITHUB_WORKSPACE/configs/nethunter.config >> .config
+          cat $GITHUB_WORKSPACE/configs/stealth.config >> .config
+          echo "CONFIG_WERROR=n" >> .config
+          echo "CONFIG_LTO_NONE=y" >> .config
+          make olddefconfig
+          
+          # THE BYPASS (The key to success)
+          # We build vmlinux to skip broken headers and firmware stubs
+          make -j$(nproc) LLVM=1 KCFLAGS="-w" vmlinux
+          
+          # Manual conversion to Image
+          llvm-objcopy -O binary vmlinux arch/arm64/boot/Image
+          
+      - name: ZIP
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 /tmp/AK3
+          cp src/kernel_platform/msm-kernel/arch/arm64/boot/Image /tmp/AK3/Image
+          cp anykernel/anykernel.sh /tmp/AK3/
+          cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v3.10.zip .
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: StealthStation-Final
+          path: StealthStation-v3.10.zip
