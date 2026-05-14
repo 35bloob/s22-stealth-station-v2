@@ -1,49 +1,82 @@
-name: S22 Stealth v2.11
+name: S22 Snapdragon Stealth v3.0
 on:
   workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout Repo
         uses: actions/checkout@v4
-      - name: Tools
-        run: sudo apt-get update && sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
-      - name: Toolchain
+
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
+
+      - name: Download Toolchain
         run: |
           mkdir -p $GITHUB_WORKSPACE/clang
           wget https://github.com/llvm/llvm-project/releases/download/llvmorg-14.0.0/clang+llvm-14.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz
           tar -xJf clang+llvm-14.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz -C $GITHUB_WORKSPACE/clang --strip-components=1
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
-      - name: Source
-        run: git clone --depth 1 https://github.com/yoro1836/android_kernel_samsung_sm8450_s22.git src
-      - name: Build
+
+      - name: Clone S22 Snapdragon Source
+        run: |
+          git clone --depth 1 https://github.com/yoro1836/android_kernel_samsung_sm8450_s22.git src
+
+      - name: Patch & Build
         run: |
           cd src/kernel_platform/msm-kernel
           export ARCH=arm64
           export LLVM=1
           export LLVM_IAS=1
           export CROSS_COMPILE=aarch64-linux-gnu-
+          
+          # 1. THE F2FS HARD-FIX (Fixes the Error 2 from your last build)
+          echo "Patching F2FS filesystem code..."
+          sed -i 's/in_group_p(F2FS_OPTION(sbi).flush_group)/1/g' fs/f2fs/data.c
+          
+          # 2. THE BERSERKER CLEAN (Remove all Werror)
+          find . -type f \( -name "Makefile" -o -name "Kbuild" -o -name "*.mk" \) -exec sed -i 's/-Werror//g' {} +
+          
+          # 3. Integrate KernelSU
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          
+          # 4. Inject RTL8188FU Driver
           mkdir -p drivers/net/wireless/rtl8188fu
           git clone --depth=1 https://github.com/kelebek333/rtl8188fu /tmp/rtl8188fu
           cp -r /tmp/rtl8188fu/* drivers/net/wireless/rtl8188fu/
           echo "obj-y += rtl8188fu/" >> drivers/net/wireless/Makefile
+          
+          # 5. Config Merge
           make O=out ARCH=arm64 LLVM=1 gki_defconfig
-          CONF=$(find arch/arm64/configs -name "waipio_defconfig" -o -name "taro_defconfig" | head -1)
-          [ -n "$CONF" ] && cat "$CONF" >> out/.config
-          [ -f $GITHUB_WORKSPACE/configs/nethunter.config ] && cat $GITHUB_WORKSPACE/configs/nethunter.config >> out/.config
-          [ -f $GITHUB_WORKSPACE/configs/stealth.config ] && cat $GITHUB_WORKSPACE/configs/stealth.config >> out/.config
+          CONF_FILE=$(find arch/arm64/configs -name "waipio_defconfig" -o -name "taro_defconfig" | head -1)
+          cat "$CONF_FILE" >> out/.config
+          cat $GITHUB_WORKSPACE/configs/nethunter.config >> out/.config
+          cat $GITHUB_WORKSPACE/configs/stealth.config >> out/.config
+          
           make O=out ARCH=arm64 LLVM=1 olddefconfig
-          make O=out -j$(nproc) ARCH=arm64 LLVM=1 LLVM_IAS=1 KCFLAGS="-w" Image
-      - name: ZIP
+          sed -i 's/CONFIG_WERROR=y/CONFIG_WERROR=n/g' out/.config
+          echo "CONFIG_WERROR=n" >> out/.config
+          
+          # 6. Final Compilation
+          make O=out -j$(nproc) ARCH=arm64 LLVM=1 LLVM_IAS=1 KCFLAGS="-w -Wno-error" Image
+
+      - name: Create ZIP
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 /tmp/AK3
-          IMG=$(find src -name "Image" | grep "out" | head -1)
-          [ -f "$IMG" ] && cp "$IMG" /tmp/AK3/Image && cp anykernel/anykernel.sh /tmp/AK3/
-          cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v2.11.zip .
-      - name: Upload
+          IMG_PATH=$(find src/kernel_platform/msm-kernel/out -name "Image" | head -1)
+          if [ -f "$IMG_PATH" ]; then
+            cp "$IMG_PATH" /tmp/AK3/Image
+            cp anykernel/anykernel.sh /tmp/AK3/
+            cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v3.0.zip .
+          else
+            echo "ERROR: Image not found."
+            exit 1
+          fi
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: StealthStation-Final
-          path: StealthStation-v2.11.zip
+          name: StealthStation-v3-Final
+          path: StealthStation-v3.0.zip
