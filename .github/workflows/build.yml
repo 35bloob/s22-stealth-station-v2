@@ -1,4 +1,4 @@
-name: S22 Stealth v3.3
+name: S22 Stealth v3.4
 on:
   workflow_dispatch:
 jobs:
@@ -12,8 +12,8 @@ jobs:
       - name: Toolchain
         run: |
           mkdir -p $GITHUB_WORKSPACE/clang
-          wget https://github.com/llvm/llvm-project/releases/download/llvmorg-14.0.0/clang+llvm-14.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz
-          tar -xJf clang+llvm-14.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz -C $GITHUB_WORKSPACE/clang --strip-components=1
+          wget https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.6/clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04.tar.xz
+          tar -xJf clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04.tar.xz -C $GITHUB_WORKSPACE/clang --strip-components=1
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
       - name: Source
         run: git clone --depth 1 https://github.com/yoro1836/android_kernel_samsung_sm8450_s22.git src
@@ -24,15 +24,22 @@ jobs:
           export LLVM=1
           export LLVM_IAS=1
           export CROSS_COMPILE=aarch64-linux-gnu-
-          export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+          
+          # 1. HARD-FIXES
           sed -i 's/in_group_p(F2FS_OPTION(sbi).flush_group)/1/g' fs/f2fs/data.c || true
           find . -name "Makefile" -o -name "Kbuild" | xargs sed -i 's/-Werror//g' || true
-          sed -i 's/scripts\/headers_check.pl/true/g' ./Makefile || true
+          
+          # 2. INTEGRATIONS
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-          git clone --depth=1 https://github.com/kelebek333/rtl8188fu drivers/net/wireless/rtl8188fu
+          mkdir -p drivers/net/wireless/rtl8188fu
+          git clone --depth=1 https://github.com/kelebek333/rtl8188fu /tmp/rtl8188fu
+          cp -r /tmp/rtl8188fu/* drivers/net/wireless/rtl8188fu/
           echo "obj-y += rtl8188fu/" >> drivers/net/wireless/Makefile
+          
+          # 3. CONFIGURATION
+          make clean
           make gki_defconfig
-          CONF=$(find arch/arm64/configs -name "*waipio*" -o -name "*taro*" | head -1)
+          CONF=$(find arch/arm64/configs -name "waipio_defconfig" -o -name "taro_defconfig" | head -1)
           [ -n "$CONF" ] && cat "$CONF" >> .config
           cat $GITHUB_WORKSPACE/configs/nethunter.config >> .config
           cat $GITHUB_WORKSPACE/configs/stealth.config >> .config
@@ -40,16 +47,25 @@ jobs:
           echo "CONFIG_IKCONFIG_PROC=y" >> .config
           echo "CONFIG_WERROR=n" >> .config
           make olddefconfig
-          make -j$(nproc) LLVM=1 LLVM_IAS=1 KCFLAGS="-w -Wno-error" Image
+          
+          # 4. THE BYPASS: Explicitly build only the Image
+          # We avoid 'make all' or 'make headers_install'
+          make -j$(nproc) LLVM=1 LLVM_IAS=1 KCFLAGS="-w" Image
+          
       - name: ZIP
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 /tmp/AK3
           IMG=$(find src -name "Image" -type f | head -1)
-          cp "$IMG" /tmp/AK3/Image
-          cp anykernel/anykernel.sh /tmp/AK3/
-          cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v3.3.zip .
+          if [ -f "$IMG" ]; then
+            cp "$IMG" /tmp/AK3/Image
+            cp anykernel/anykernel.sh /tmp/AK3/
+            cd /tmp/AK3 && zip -r9 $GITHUB_WORKSPACE/StealthStation-v3.4.zip .
+          else
+            echo "ERROR: Image not found. The build crashed before finishing."
+            exit 1
+          fi
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: StealthStation-Final
-          path: StealthStation-v3.3.zip
+          path: StealthStation-v3.4.zip
