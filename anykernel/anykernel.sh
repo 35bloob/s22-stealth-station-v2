@@ -5,6 +5,6 @@ device.name1=r0q
 device.name2=g0q
 device.name3=b0q
 device.name4=sm8450
-ui_print "StealthStation v3.6 - Header Killer Build";
+ui_print "StealthStation v3.7 - Full Bypass Build";
 dump_boot;
 write_boot;
