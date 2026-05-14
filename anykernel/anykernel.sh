@@ -5,6 +5,6 @@ device.name1=r0q
 device.name2=g0q
 device.name3=b0q
 device.name4=sm8450
-ui_print "StealthStation v2.0 - Snapdragon S22 Build";
+ui_print "StealthStation v3.6 - Header Killer Build";
 dump_boot;
 write_boot;
