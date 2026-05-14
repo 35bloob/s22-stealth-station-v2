@@ -1,26 +1,30 @@
-name: Autonomous S22 Solver V20
+name: Autonomous S22 Solver V21
 on:
   workflow_dispatch:
 jobs:
   agent_build:
     runs-on: ubuntu-latest
     steps:
-      - name: Nuke and Setup
+      - name: Setup Tools
         run: |
-          # Completely clear the workspace to prevent Git 128 conflicts
-          rm -rf ./* .git .github
           sudo fallocate -l 12G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
           sudo apt-get update && sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
       - name: Hardcore Build
         run: |
-          # Clone fresh into the empty workspace
+          # Create a totally separate folder so Git 128 can't happen
+          mkdir -p /home/runner/work/kernel_area
+          cd /home/runner/work/kernel_area
+          
+          # Clone the source into this fresh, non-git folder
           git clone --depth 1 https://github.com/Vikinsson207/android_kernel_samsung_sm8450.git src
           cd src
           
-          # Setup KernelSU
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          # Find Makefile root
+          KROOT=$(find $(pwd) -name "Makefile" | xargs grep -l "VERSION =" | head -1 | xargs dirname)
+          cd "$KROOT"
           
-          # Disable LTO to prevent RAM crashes
+          # Setup KernelSU & Disable LTO
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
           find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
           find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
           
@@ -28,7 +32,7 @@ jobs:
           export LLVM=1
           export CROSS_COMPILE=aarch64-linux-gnu-
           
-          # Build Config (Samsung Waipio/Taro)
+          # Build Config
           make vendor/waipio_GKI.config || make waipio_GKI.config || make gki_defconfig
           
           chmod +x scripts/config
@@ -40,14 +44,15 @@ jobs:
           make olddefconfig
           make -j$(nproc) LLVM=1 KCFLAGS="-w" Image
           
-          cp arch/arm64/boot/Image ../Image
+          cp arch/arm64/boot/Image /home/runner/work/final_Image
       - name: Package
         run: |
+          cd /home/runner/work
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AK3
-          cp Image AK3/Image
-          cd AK3 && zip -r9 ../StealthStation-V20.zip .
+          cp final_Image AK3/Image
+          cd AK3 && zip -r9 ../StealthStation-V21.zip .
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: StealthStation-Final
-          path: StealthStation-V20.zip
+          path: /home/runner/work/StealthStation-V21.zip
