@@ -1,11 +1,11 @@
-name: Autonomous S22 Solver V16
+name: Autonomous S22 Solver V17
 on:
   workflow_dispatch:
 jobs:
   agent_build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout Repo
         uses: actions/checkout@v4
       - name: Setup Tools
         run: |
@@ -13,33 +13,48 @@ jobs:
           sudo apt-get update && sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
       - name: Hardcore Build
         run: |
-          rm -rf src
-          git clone --depth 1 https://github.com/Vikinsson207/android_kernel_samsung_sm8450.git src
-          KROOT=$(find $(pwd)/src -name "Makefile" | xargs grep -l "VERSION =" | head -1 | xargs dirname)
+          # Clone into a temporary directory OUTSIDE the workspace to avoid Git conflicts
+          git clone --depth 1 https://github.com/Vikinsson207/android_kernel_samsung_sm8450.git /tmp/kernel_src
+          
+          # Find the root and move to it
+          KROOT=$(find /tmp/kernel_src -name "Makefile" | xargs grep -l "VERSION =" | head -1 | xargs dirname)
           cd "$KROOT"
+          
+          # Inject KernelSU
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          
+          # Disable LTO globally
           find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
           find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
+          
           export ARCH=arm64
           export LLVM=1
           export CROSS_COMPILE=aarch64-linux-gnu-
+          
+          # Build Config
           make vendor/waipio_GKI.config || make waipio_GKI.config || make gki_defconfig
+          
           chmod +x scripts/config
           ./scripts/config --enable CONFIG_USB_F_HID
           ./scripts/config --enable CONFIG_USB_CONFIGFS_F_HID
           ./scripts/config --enable CONFIG_QCACLD_WLAN_MONITOR
           ./scripts/config --disable CONFIG_MODULE_SIG
           ./scripts/config --set-str CONFIG_SYSTEM_TRUSTED_KEYS ""
+          
           make olddefconfig
           make -j$(nproc) LLVM=1 KCFLAGS="-w" Image
+          
+          # Move the finished image back to the workspace for packaging
+          cp arch/arm64/boot/Image $GITHUB_WORKSPACE/Image
       - name: Package
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AK3
-          IMG=$(find src -name "Image" -type f | head -1)
-          cp "$IMG" AK3/Image
-          cd AK3 && zip -r9 ../StealthStation-V16.zip .
+          cp $GITHUB_WORKSPACE/Image AK3/Image
+          # Use local anykernel script if it exists in your repo
+          [ -f anykernel/anykernel.sh ] && cp anykernel/anykernel.sh AK3/anykernel.sh
+          cd AK3 && zip -r9 ../StealthStation-V17.zip .
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: StealthStation-Final
-          path: StealthStation-V16.zip
+          path: StealthStation-V17.zip
