@@ -5,45 +5,26 @@ jobs:
   agent_build:
     runs-on: ubuntu-latest
     steps:
-      - name: Phase 0: Setup Environment
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
+      - name: Phase 0: Setup
+        run: sudo apt-get update && sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
       
-      - name: Phase 1: Fetch Source
+      - name: Phase 1: Fetch
         run: |
           git clone --depth 1 https://github.com/yoro1836/zero_kernel.git src
           cd src
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-      - name: Phase 3 & 4: Max Configuration
+      - name: Phase 3 & 4: Config
         run: |
           cd src
           export ARCH=arm64
           make gki_defconfig
           chmod +x scripts/config
-          
-          # Internal Wi-Fi Monitor Mode (qcacld-3.0)
-          ./scripts/config --enable CONFIG_QCACLD_WLAN_MONITOR --enable CONFIG_CFG80211_CERTIFICATION_ONUS
-          
-          # USB HID & Gadgets (Keyboard/Mouse Injection)
-          ./scripts/config --enable CONFIG_USB_G_HID --enable CONFIG_USB_CONFIGFS_F_HID --enable CONFIG_USB_F_HID --enable CONFIG_USB_CONFIGFS_F_RNDIS
-          
-          # Automotive & Networking
-          ./scripts/config --enable CONFIG_CAN --enable CONFIG_CAN_VCAN --enable CONFIG_CAN_SLCAN --enable CONFIG_CAN_RAW
-          ./scripts/config --enable CONFIG_WIREGUARD --enable CONFIG_IP_NF_TARGET_REDIRECT
-          
-          # NFC & Bluetooth
-          ./scripts/config --enable CONFIG_NFC_NCI --enable CONFIG_BT_HCIBTUSB --enable CONFIG_BT_HCIUART
-          
-          # Container Support (Kali Chroot)
-          ./scripts/config --disable CONFIG_MODULE_SIG --enable CONFIG_NAMESPACES --enable CONFIG_CGROUPS
-          
-          # LTO Fix
+          ./scripts/config --enable CONFIG_QCACLD_WLAN_MONITOR --enable CONFIG_USB_G_HID --enable CONFIG_USB_CONFIGFS_F_HID --enable CONFIG_CAN --enable CONFIG_WIREGUARD --enable CONFIG_BT_HCIBTUSB --disable CONFIG_MODULE_SIG
           find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
           make olddefconfig
 
-      - name: Phase 5 & 6: Build & Package
+      - name: Phase 5 & 6: Build
         run: |
           cd src
           make -j$(nproc) ARCH=arm64 LLVM=1 CROSS_COMPILE=aarch64-linux-gnu- KCFLAGS="-w" Image
