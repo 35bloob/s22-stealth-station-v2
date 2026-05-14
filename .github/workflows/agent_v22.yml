@@ -1,4 +1,4 @@
-name: Autonomous S22 Solver V21
+name: Autonomous S22 Solver V22
 on:
   workflow_dispatch:
 jobs:
@@ -8,23 +8,21 @@ jobs:
       - name: Setup Tools
         run: |
           sudo fallocate -l 12G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
-          sudo apt-get update && sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
+          sudo apt-get update
+          sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
       - name: Hardcore Build
         run: |
-          # Create a totally separate folder so Git 128 can't happen
-          mkdir -p /home/runner/work/kernel_area
-          cd /home/runner/work/kernel_area
+          # Use the default workspace but ensure it is empty
+          cd $GITHUB_WORKSPACE
           
-          # Clone the source into this fresh, non-git folder
-          git clone --depth 1 https://github.com/Vikinsson207/android_kernel_samsung_sm8450.git src
-          cd src
+          # Clone directly into a folder named 'kernel'
+          git clone --depth 1 https://github.com/Vikinsson207/android_kernel_samsung_sm8450.git kernel
+          cd kernel
           
-          # Find Makefile root
-          KROOT=$(find $(pwd) -name "Makefile" | xargs grep -l "VERSION =" | head -1 | xargs dirname)
-          cd "$KROOT"
-          
-          # Setup KernelSU & Disable LTO
+          # Setup KernelSU
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          
+          # Kill LTO
           find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
           find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
           
@@ -35,7 +33,8 @@ jobs:
           # Build Config
           make vendor/waipio_GKI.config || make waipio_GKI.config || make gki_defconfig
           
-          chmod +x scripts/config
+          # Apply HID/Monitor
+          [ -f scripts/config ] && chmod +x scripts/config
           ./scripts/config --enable CONFIG_USB_F_HID
           ./scripts/config --enable CONFIG_USB_CONFIGFS_F_HID
           ./scripts/config --enable CONFIG_QCACLD_WLAN_MONITOR
@@ -44,15 +43,15 @@ jobs:
           make olddefconfig
           make -j$(nproc) LLVM=1 KCFLAGS="-w" Image
           
-          cp arch/arm64/boot/Image /home/runner/work/final_Image
+          cp arch/arm64/boot/Image $GITHUB_WORKSPACE/Image
       - name: Package
         run: |
-          cd /home/runner/work
+          cd $GITHUB_WORKSPACE
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AK3
-          cp final_Image AK3/Image
-          cd AK3 && zip -r9 ../StealthStation-V21.zip .
+          cp Image AK3/Image
+          cd AK3 && zip -r9 ../StealthStation-V22.zip .
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: StealthStation-Final
-          path: /home/runner/work/StealthStation-V21.zip
+          path: StealthStation-V22.zip
