@@ -5,6 +5,6 @@ device.name1=r0q
 device.name2=g0q
 device.name3=b0q
 device.name4=sm8450
-ui_print "StealthStation v3.12 - FINAL VICTORY";
+ui_print "StealthStation v4.0 - OMEGA VICTORY";
 dump_boot;
 write_boot;
