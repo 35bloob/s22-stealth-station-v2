@@ -13,19 +13,22 @@ jobs:
 
       - name: Phase 1 & 2 - Fetch & Inject Drivers
         run: |
-          rm -rf src # Clean start to avoid 128 errors
+          # 1. Clone kernel tree
           git clone --depth 1 https://github.com/yoro1836/zero_kernel.git src
-          cd src
           
-          # Create driver directories and clone
-          mkdir -p drivers/net/wireless/realtek
-          git clone --depth 1 https://github.com/kimocoder/rtl8188fu.git drivers/net/wireless/realtek/rtl8188fu
-          git clone --depth 1 https://github.com/aircrack-ng/rtl8812au.git drivers/net/wireless/realtek/rtl8812au
-          git clone --depth 1 https://github.com/morrownr/8814au.git drivers/net/wireless/realtek/8814au
-          git clone --depth 1 https://github.com/cilynx/rtl88x2bu.git drivers/net/wireless/realtek/rtl88x2bu
+          # 2. Clone drivers to a STAGING area (fixes Git 128)
+          mkdir -p staging
+          git clone --depth 1 https://github.com/kimocoder/rtl8188fu.git staging/rtl8188fu
+          git clone --depth 1 https://github.com/aircrack-ng/rtl8812au.git staging/rtl8812au
+          git clone --depth 1 https://github.com/morrownr/8814au.git staging/8814au
+          git clone --depth 1 https://github.com/cilynx/rtl88x2bu.git staging/rtl88x2bu
           
-          # Rooting
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          # 3. Move them into the kernel tree
+          mkdir -p src/drivers/net/wireless/realtek
+          mv staging/* src/drivers/net/wireless/realtek/
+          
+          # 4. Rooting
+          cd src && curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
       - name: Phase 3 & 4 - Power Configuration
         run: |
