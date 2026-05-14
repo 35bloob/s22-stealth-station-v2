@@ -1,0 +1,92 @@
+name: Autonomous S22 Solver
+on:
+  workflow_dispatch:
+jobs:
+  agent_build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Setup Tools & Toolchain
+        run: |
+          sudo fallocate -l 10G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+          sudo apt-get update && sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+          mkdir -p $GITHUB_WORKSPACE/clang
+          wget -q https://github.com/llvm/llvm-project/releases/download/llvmorg-14.0.0/clang+llvm-14.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz
+          tar -xJf clang+llvm-14.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz -C $GITHUB_WORKSPACE/clang --strip-components=1
+          
+      - name: The Brute-Force Agent
+        run: |
+          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+          export ARCH=arm64
+          export LLVM=1
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+          
+          echo "🤖 AGENT: Cloning Source..."
+          git clone --depth 1 https://github.com/Vikinsson207/android_kernel_samsung_sm8450.git src
+          
+          # Find where the kernel actually is
+          cd src
+          KROOT=$(find . -name "Kbuild" -type f | grep "arch/arm64" | head -1 | sed 's|/arch/arm64/Kbuild||')
+          if [ -n "$KROOT" ]; then cd "$KROOT"; fi
+          echo "🤖 AGENT: Operating in $PWD"
+          
+          # Universal Hacks
+          sed -i 's/in_group_p(F2FS_OPTION(sbi).flush_group)/1/g' fs/f2fs/data.c || true
+          find . -name "Makefile" -exec sed -i 's/-Werror//g' {} + || true
+          
+          # Define all possible configs to try
+          CONFIGS="vendor/waipio_defconfig vendor/taro_defconfig waipio_defconfig taro_defconfig gki_defconfig defconfig"
+          
+          SUCCESS=0
+          
+          for CONF in $CONFIGS; do
+            echo "================================================="
+            echo "🤖 AGENT TRYING CONFIGURATION: $CONF"
+            echo "================================================="
+            
+            make clean || true
+            make mrproper || true
+            
+            # If the config doesn't exist, skip to the next one
+            make $CONF || continue
+            
+            # Merge custom settings
+            cat ${{ github.workspace }}/configs/nethunter.config >> .config || true
+            cat ${{ github.workspace }}/configs/stealth.config >> .config || true
+            echo "CONFIG_WERROR=n" >> .config
+            
+            make olddefconfig || true
+            
+            # Suppress all errors and attempt to brute-force the Image
+            echo "🤖 AGENT: Compiling with $CONF..."
+            make -j$(nproc) LLVM=1 KCFLAGS="-w" Image || echo "🤖 AGENT: $CONF failed. Cleaning up and moving to next..."
+            
+            # Did it work?
+            if [ -f arch/arm64/boot/Image ]; then
+              echo "✅ AGENT SUCCESS: Kernel Image built using $CONF!"
+              SUCCESS=1
+              break
+            fi
+          done
+          
+          if [ "$SUCCESS" -eq 0 ]; then
+            echo "❌ AGENT FAILED: Exhausted all configurations."
+            exit 1
+          fi
+
+      - name: Package & Upload
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AK3
+          IMG=$(find src -name "Image" -type f | head -1)
+          cp "$IMG" AK3/Image
+          cp anykernel/anykernel.sh AK3/anykernel.sh
+          cd AK3 && zip -r9 ../StealthStation-Agent-Solved.zip .
+          
+      - name: Deliver Kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: StealthStation-Final
+          path: StealthStation-Agent-Solved.zip
