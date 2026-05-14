@@ -1,4 +1,4 @@
-name: Autonomous S22 Solver V14
+name: Autonomous S22 Solver V16
 on:
   workflow_dispatch:
 jobs:
@@ -13,52 +13,33 @@ jobs:
           sudo apt-get update && sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
       - name: Hardcore Build
         run: |
+          rm -rf src
           git clone --depth 1 https://github.com/Vikinsson207/android_kernel_samsung_sm8450.git src
-          
-          # Find the exact kernel directory and enter it [4]
-          KROOT=$(find $(pwd)/src -name "Makefile" | grep "msm-kernel" | head -1 | xargs dirname)
+          KROOT=$(find $(pwd)/src -name "Makefile" | xargs grep -l "VERSION =" | head -1 | xargs dirname)
           cd "$KROOT"
-          
-          # Universal Tool Hunter: Find scripts/config and force permissions 
-          CONF_PATH=$(find. -name "config" -path "*/scripts/*" | head -1)
-          chmod +x "$CONF_PATH"
-          echo "Found config tool at: $CONF_PATH"
-
-          # Inject KernelSU [5, 6]
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-          
-          # Kill LTO globally to prevent OOM (Out of Memory) crashes [7]
-          find. -name "*defconfig" -o -name "*.config" | xargs sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' || true
-          find. -name "*defconfig" -o -name "*.config" | xargs sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_NONE=y/g' || true
-          
+          find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
+          find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
           export ARCH=arm64
           export LLVM=1
           export CROSS_COMPILE=aarch64-linux-gnu-
-          
-          # Load the base Samsung config
           make vendor/waipio_GKI.config || make waipio_GKI.config || make gki_defconfig
-          
-          # APPLY FEATURES USING DISCOVERED PATH [8, 9]
-          $CONF_PATH --enable CONFIG_USB_F_HID
-          $CONF_PATH --enable CONFIG_USB_CONFIGFS_F_HID
-          $CONF_PATH --enable CONFIG_QCACLD_WLAN_MONITOR
-          $CONF_PATH --enable CONFIG_TCP_CONG_BBR
-          $CONF_PATH --enable CONFIG_NETFILTER_XT_TARGET_HL
-          $CONF_PATH --disable CONFIG_MODULE_SIG
-          $CONF_PATH --set-str CONFIG_SYSTEM_TRUSTED_KEYS ""
-          
+          chmod +x scripts/config
+          ./scripts/config --enable CONFIG_USB_F_HID
+          ./scripts/config --enable CONFIG_USB_CONFIGFS_F_HID
+          ./scripts/config --enable CONFIG_QCACLD_WLAN_MONITOR
+          ./scripts/config --disable CONFIG_MODULE_SIG
+          ./scripts/config --set-str CONFIG_SYSTEM_TRUSTED_KEYS ""
           make olddefconfig
           make -j$(nproc) LLVM=1 KCFLAGS="-w" Image
-          
       - name: Package
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AK3
           IMG=$(find src -name "Image" -type f | head -1)
           cp "$IMG" AK3/Image
-          cp anykernel/anykernel.sh AK3/anykernel.sh
-          cd AK3 && zip -r9../StealthStation-V14.zip.
+          cd AK3 && zip -r9 ../StealthStation-V16.zip .
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: StealthStation-Final
-          path: StealthStation-V14.zip
+          path: StealthStation-V16.zip
