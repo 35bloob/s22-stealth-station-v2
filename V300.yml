@@ -1,0 +1,64 @@
+Skip to content
+s22-stealth-station-v2
+Repository navigation
+Code
+Issues
+Actions
+StealthStation V25 Hybrid
+StealthStation V25 Hybrid #1
+Workflow file for this run
+.github/workflows/agent_v25_hybrid.yml at 4cb6fca
+name: StealthStation V25 Hybrid
+on:
+  workflow_dispatch:
+jobs:
+  agent_build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Phase 0 - Setup Env
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 \
+          device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
+      - name: Phase 1 & 2 - Fetch & Inject Drivers
+        run: |
+          git clone --depth 1 https://github.com/yoro1836/zero_kernel.git src
+          cd src
+          git clone --depth 1 https://github.com/kimocoder/rtl8188fu.git drivers/net/wireless/rtl8188fu
+          git clone --depth 1 https://github.com/aircrack-ng/rtl8812au.git drivers/net/wireless/rtl8812au
+          git clone --depth 1 https://github.com/morrownr/8814au.git drivers/net/wireless/8814au
+          git clone --depth 1 https://github.com/cilynx/rtl88x2bu.git drivers/net/wireless/rtl88x2bu
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+      - name: Phase 3 & 4 - Patch & Configure
+        run: |
+          cd src
+          find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
+          find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
+          export ARCH=arm64
+          make gki_defconfig
+          chmod +x scripts/config
+          ./scripts/config --enable CONFIG_USB_F_HID --enable CONFIG_USB_CONFIGFS_F_HID
+          ./scripts/config --enable CONFIG_QCACLD_WLAN_MONITOR --enable CONFIG_WIREGUARD
+          ./scripts/config --enable CONFIG_CAN --enable CONFIG_NAMESPACES --enable CONFIG_CGROUPS
+          ./scripts/config --enable CONFIG_NTFS3_FS --enable CONFIG_CIFS --enable CONFIG_NFS_FS
+          ./scripts/config --enable CONFIG_RTL8188FU --enable CONFIG_RTL8812AU --enable CONFIG_RTL8814AU
+          make olddefconfig
+      - name: Phase 5 - Build Kernel
+        run: |
+          cd src
+          export ARCH=arm64
+          export LLVM=1
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make -j$(nproc) LLVM=1 KCFLAGS="-w" Image
+          cp arch/arm64/boot/Image $GITHUB_WORKSPACE/Image
+      - name: Phase 6 - Package & Upload
+        run: |
+          cd $GITHUB_WORKSPACE
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AK3
+          cp Image AK3/Image
+          cd AK3 && zip -r9 ../StealthStation-V25-Hybrid.zip .
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StealthStation-Hybrid-Final
+          path: StealthStation-V25-Hybrid.zip
