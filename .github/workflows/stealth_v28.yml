@@ -1,53 +1,62 @@
 name: Autonomous S22 Solver V28
+
 on:
   workflow_dispatch:
+
 jobs:
   agent_build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Phase 0: Setup
         run: |
-          sudo apt-get update && sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 \
+            device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
 
       - name: Phase 1: Fetch
         run: |
-          git clone --depth 1 https://github.com/yoro1836/zero_kernel.git $GITHUB_WORKSPACE/src
-          cd $GITHUB_WORKSPACE/src
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          git clone --depth 1 https://github.com/yoroi88/android_kernel_samsung_sm8550.git src
+          cd "$GITHUB_WORKSPACE/src"
+          curl -L -sS "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
       - name: Phase 3 & 4: Config
         run: |
-          cd $GITHUB_WORKSPACE/src
+          cd "$GITHUB_WORKSPACE/src"
           export ARCH=arm64
-          export LLVM=1
+          export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
-          find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
-          find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
-          make gki_defconfig
-          chmod +x scripts/config
-          ./scripts/config --enable CONFIG_QCACLD_WLAN_MONITOR \
-            --enable CONFIG_USB_G_HID \
-            --enable CONFIG_USB_CONFIGFS_F_HID \
-            --enable CONFIG_CAN \
-            --enable CONFIG_WIREGUARD \
-            --enable CONFIG_BT_HCIBTUSB \
-            --disable CONFIG_MODULE_SIG
-          make olddefconfig
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export PATH=/usr/lib/llvm-18/bin:$PATH
+
+          make O=out ARCH=arm64 vendor/samsung/r0q_00_EUR_open_defconfig
+          ./KernelSU/kernel/setup.sh config
 
       - name: Phase 5 & 6: Build
         run: |
-          cd $GITHUB_WORKSPACE/src
-          make -j$(nproc) ARCH=arm64 LLVM=1 CROSS_COMPILE=aarch64-linux-gnu- KCFLAGS="-w" Image
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 $GITHUB_WORKSPACE/AK3
-          cp arch/arm64/boot/Image $GITHUB_WORKSPACE/AK3/Image
-          cd $GITHUB_WORKSPACE/AK3
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's/device.name1=/device.name1=r0q/' anykernel.sh
-          sed -i 's/device.name2=/device.name2=r0qxxx/' anykernel.sh
-          zip -r9 $GITHUB_WORKSPACE/StealthStation-S22-V28.zip .
+          cd "$GITHUB_WORKSPACE/src"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export PATH=/usr/lib/llvm-18/bin:$PATH
 
-      - name: Upload
+          make -j"$(nproc)" O=out \
+            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm STRIP=llvm-strip \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf \
+            HOSTCC=clang HOSTCXX=clang++
+
+          # pack AnyKernel3 zip from out/ into StealthStation-V28.zip
+          cd "$GITHUB_WORKSPACE"
+          mkdir -p out_zip
+          cp -r anykernel3/* out_zip/
+          cp src/out/arch/arm64/boot/Image out_zip/
+          cd out_zip
+          zip -r ../StealthStation-V28.zip .
+
+      - name: Upload StealthStation zip
         uses: actions/upload-artifact@v4
         with:
-          name: StealthStation-Final
-          path: StealthStation-S22-V28.zip
+          name: StealthStation-V28
+          path: StealthStation-V28.zip
