@@ -47,7 +47,6 @@ jobs:
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf \
             HOSTCC=clang HOSTCXX=clang++
 
-          # pack AnyKernel3 zip from out/ into StealthStation-V28.zip
           cd "$GITHUB_WORKSPACE"
           mkdir -p out_zip
           cp -r anykernel3/* out_zip/
