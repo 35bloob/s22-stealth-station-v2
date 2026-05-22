@@ -1,55 +1,46 @@
 name: Autonomous S22 Solver V25
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 jobs:
   agent_build:
     runs-on: ubuntu-latest
     steps:
       - name: Setup Tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 \
-          device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
+        run: sudo apt-get update && sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
 
       - name: Build Kernel
         run: |
-          cd $GITHUB_WORKSPACE
-          git clone --depth 1 https://github.com/yoro1836/zero_kernel.git src
+          cd "$GITHUB_WORKSPACE"
+          git clone --depth 1 -b zero https://github.com/yoro1836/zero_kernel.git src
           cd src
-          
-          # Rooting via KernelSU
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-          
-          # Strip LTO to prevent build hangs on Snapdragon (taro)
           find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
           find . -type f -name "*defconfig" -exec sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_NONE=y/g' {} +
-          
           export ARCH=arm64
           export LLVM=1
           export CROSS_COMPILE=aarch64-linux-gnu-
-          
           make gki_defconfig
-          
           chmod +x scripts/config
           ./scripts/config --enable CONFIG_USB_F_HID
           ./scripts/config --enable CONFIG_USB_CONFIGFS_F_HID
           ./scripts/config --enable CONFIG_QCACLD_WLAN_MONITOR
           ./scripts/config --disable CONFIG_MODULE_SIG
-          
           make olddefconfig
           make -j$(nproc) LLVM=1 KCFLAGS="-w" Image
-          
-          cp arch/arm64/boot/Image $GITHUB_WORKSPACE/Image
 
-      - name: Package
+      - name: Package Flat for TWRP
         run: |
-          cd $GITHUB_WORKSPACE
+          cd "$GITHUB_WORKSPACE"
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AK3
-          cp Image AK3/Image
-          cd AK3 && zip -r9 ../StealthStation-V25.zip .
+          cp src/arch/arm64/boot/Image AK3/Image
+          cd AK3
+          zip -r9 "../S22-StealthStation.zip" *
 
-      - name: Upload
+      - name: Upload Finished Zip
         uses: actions/upload-artifact@v4
         with:
-          name: StealthStation-Final
-          path: StealthStation-V25.zip
+          name: S22-StealthStation-Install
+          path: S22-StealthStation.zip
