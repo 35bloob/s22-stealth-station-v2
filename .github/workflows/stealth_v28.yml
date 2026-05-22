@@ -1,61 +1,25 @@
 name: Autonomous S22 Solver V28
-
 on:
   workflow_dispatch:
-
+  push:
+    branches:
+      - main
 jobs:
   agent_build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Phase 0: Setup
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 \
-            device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
-
-      - name: Phase 1: Fetch
-        run: |
-          git clone --depth 1 https://github.com/yoroi88/android_kernel_samsung_sm8550.git src
-          cd "$GITHUB_WORKSPACE/src"
-          curl -L -sS "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-
-      - name: Phase 3 & 4: Config
-        run: |
-          cd "$GITHUB_WORKSPACE/src"
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export PATH=/usr/lib/llvm-18/bin:$PATH
-
-          make O=out ARCH=arm64 vendor/samsung/r0q_00_EUR_open_defconfig
-          ./KernelSU/kernel/setup.sh config
-
-      - name: Phase 5 & 6: Build
-        run: |
-          cd "$GITHUB_WORKSPACE/src"
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export PATH=/usr/lib/llvm-18/bin:$PATH
-
-          make -j"$(nproc)" O=out \
-            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm STRIP=llvm-strip \
-            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf \
-            HOSTCC=clang HOSTCXX=clang++
-
-          cd "$GITHUB_WORKSPACE"
-          mkdir -p out_zip
-          cp -r anykernel3/* out_zip/
-          cp src/out/arch/arm64/boot/Image out_zip/
-          cd out_zip
-          zip -r ../StealthStation-V28.zip .
-
-      - name: Upload StealthStation zip
+      - name: Phase 0 Setup
+        run: sudo apt-get update && sudo apt-get install -y bc flex bison libssl-dev libelf-dev git curl wget zip unzip python3 device-tree-compiler jq rsync llvm lld clang gcc-aarch64-linux-gnu
+      - name: Phase 1 Fetch
+        run: git clone --depth 1 https://github.com/yoroi88/android_kernel_samsung_sm8550.git src && cd src && curl -L -sS "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+      - name: Phase 3 Config
+        run: cd src && export ARCH=arm64 && export SUBARCH=arm64 && make O=out ARCH=arm64 gki_defconfig
+      - name: Phase 5 Compile
+        run: cd src && export ARCH=arm64 && export SUBARCH=arm64 && export PATH=/usr/bin:$PATH && make -j$(nproc) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- Image.gz
+      - name: Phase 6 Package
+        run: cp src/out/arch/arm64/boot/Image.gz anykernel/ && cd anykernel && zip -r9 "../StealthStation-V25-S22.zip" *
+      - name: Phase 7 Upload
         uses: actions/upload-artifact@v4
         with:
-          name: StealthStation-V28
-          path: StealthStation-V28.zip
+          name: StealthStation-V25-S22
+          path: StealthStation-V25-S22.zip
